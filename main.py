@@ -5,10 +5,13 @@ Projekt: Modelowanie Monte Carlo — Temat nr 13
 Autorzy: Michał Czajkowski, Filip Starościak
 
 Schemat działania:
-  1. Pobierz korpus „Lalka" (Project Gutenberg) i zbuduj macierz bigramów.
+  1. Pobierz korpus „Pan Tadeusz" (Project Gutenberg) i zbuduj macierz bigramów.
   2. Demonstracja — jeden pełny cykl: szyfrowanie → MH → weryfikacja.
-  3. Eksperymenty Monte Carlo — N=100 prób dla długości tekstu [100, 500, 1000, 5000].
-  4. Wykresy: zbieżność MH, histogram dokładności, boxplot vs długość.
+  3. Eksperymenty Monte Carlo — N=100 prób dla długości tekstu [100, 500, 1000, 5000]:
+       a) szyfr podstawieniowy (monoalfabetyczny)
+       b) szyfr kolumnowy (transpozycyjny)
+  4. Wykresy: zbieżność MH, histogram dokładności, boxplot vs długość,
+              porównanie obu szyfrów.
 """
 
 import numpy as np
@@ -21,11 +24,14 @@ from src import transposition
 from src.mcmc_transposition import solve_transposition
 from src.experiments import (
     run_monte_carlo,
+    run_monte_carlo_transposition,
     print_results,
     plot_convergence,
     plot_accuracy_histogram,
     plot_accuracy_vs_length,
     plot_mean_accuracy_vs_length,
+    plot_comparison_accuracy_vs_length,
+    plot_comparison_boxplot,
 )
 
 # ─── Parametry szyfru przestawieniowego ──────────────────────────────────────
@@ -36,7 +42,7 @@ TRANSPOSITION_RESTARTS = 10    # restartów (MH szybko utyka w lokalnym maksimum
 
 # ─── Parametry ────────────────────────────────────────────────────────────────
 
-TEXT_LENGTHS = [100, 500, 1000, 5000, 10000]   # długości tekstu do eksperymentów [litery]
+TEXT_LENGTHS = [100, 500, 1000, 5000]   # długości tekstu do eksperymentów [litery]
 N_RUNS      = 100                        # liczba powtórzeń Monte Carlo
 N_ITER      = 10_000                     # iteracji MH na jeden przebieg
 SEED        = 42
@@ -146,13 +152,13 @@ def main() -> None:
         title=f"transposition_k{TRANSPOSITION_KEY_LEN}_{TRANSPOSITION_TEXT_LEN}liter",
     )
 
-    # 3. Eksperymenty Monte Carlo
+    # 3a. Eksperymenty Monte Carlo — szyfr podstawieniowy
     print("\n" + "=" * 60)
-    print(f"  EKSPERYMENTY MONTE CARLO")
+    print(f"  EKSPERYMENTY MONTE CARLO — szyfr podstawieniowy")
     print(f"  N_RUNS={N_RUNS}, N_ITER={N_ITER}, długości={TEXT_LENGTHS}")
     print("=" * 60)
 
-    all_results = []
+    subst_results = []
     for length in TEXT_LENGTHS:
         results = run_monte_carlo(
             full_text, log_bigrams,
@@ -161,7 +167,7 @@ def main() -> None:
             n_iter=N_ITER,
         )
         print_results(results)
-        all_results.append(results)
+        subst_results.append(results)
 
         plot_accuracy_histogram(results)
         plot_convergence(
@@ -169,9 +175,42 @@ def main() -> None:
             title=f"{length}liter",
         )
 
-    # 4. Wykresy zbiorcze
-    plot_accuracy_vs_length(all_results)
-    plot_mean_accuracy_vs_length(all_results)
+    # 3b. Eksperymenty Monte Carlo — szyfr kolumnowy
+    print("\n" + "=" * 60)
+    print(f"  EKSPERYMENTY MONTE CARLO — szyfr kolumnowy")
+    print(f"  N_RUNS={N_RUNS}, N_ITER={N_ITER}, k={TRANSPOSITION_KEY_LEN}, "
+          f"restartów={TRANSPOSITION_RESTARTS}, długości={TEXT_LENGTHS}")
+    print("=" * 60)
+
+    trans_results = []
+    for length in TEXT_LENGTHS:
+        results = run_monte_carlo_transposition(
+            full_text, log_bigrams,
+            key_length=TRANSPOSITION_KEY_LEN,
+            text_length=length,
+            n_runs=N_RUNS,
+            n_iter=N_ITER,
+            n_restarts=TRANSPOSITION_RESTARTS,
+        )
+        print_results(results)
+        trans_results.append(results)
+
+        plot_accuracy_histogram(results)
+        plot_convergence(
+            results["score_histories"][:10],
+            title=f"transp_k{TRANSPOSITION_KEY_LEN}_{length}liter",
+        )
+
+    # 4. Wykresy zbiorcze — podstawieniowy
+    plot_accuracy_vs_length(subst_results)
+    plot_mean_accuracy_vs_length(subst_results)
+
+    # 5. Wykresy porównawcze — oba szyfry
+    print("\n" + "=" * 60)
+    print("  WYKRESY PORÓWNAWCZE")
+    print("=" * 60)
+    plot_comparison_accuracy_vs_length(subst_results, trans_results)
+    plot_comparison_boxplot(subst_results, trans_results)
 
     print("\nGotowe! Wyniki i wykresy zapisano w katalogu  results/")
 
