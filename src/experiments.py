@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -17,7 +18,6 @@ def run_single_experiment(plaintext, log_bigrams, n_iter=10_000):
     true_decrypt_key = np.random.permutation(26).astype(np.int8)
     true_encrypt_key = inverse_key(true_decrypt_key)
     ciphertext = encrypt(plaintext, true_encrypt_key)
-
     found_key, best_score, score_history = metropolis_hastings(
         ciphertext, log_bigrams, n_iter=n_iter
     )
@@ -33,10 +33,11 @@ def run_monte_carlo(full_text, log_bigrams, text_length=500, n_runs=100, n_iter=
         raise ValueError(f"Tekst ({len(full_text)} liter) krótszy niż text_length={text_length}")
     plaintext = full_text[:text_length]
 
+    plaintext = full_text[:text_length]
     accuracies = []
     score_histories = []
 
-    for _ in tqdm(range(n_runs), desc=f"len={text_length:>5}", leave=True):
+    for _ in tqdm(range(n_runs), desc=f"subst len={text_length:>5}", leave=True):
         result = run_single_experiment(plaintext, log_bigrams, n_iter)
         accuracies.append(result["accuracy"])
         score_histories.append(result["score_history"])
@@ -48,6 +49,7 @@ def run_monte_carlo(full_text, log_bigrams, text_length=500, n_runs=100, n_iter=
     n_perfect = int((accuracies == 1.0).sum())
 
     return {
+        "cipher": "substitution",
         "text_length": text_length,
         "n_runs": n_runs,
         "n_iter": n_iter,
@@ -65,9 +67,13 @@ def print_results(r):
     print(f"\n{'─'*55}")
     print(f"  Długość tekstu : {r['text_length']:>5} liter")
     print(f"  Liczba prób    : {r['n_runs']}")
-    print(f"  Śr. dokładność : {r['mean_accuracy']:.1%}  ± {r['std_accuracy']:.1%}")
-    print(f"  95% CI         : [{r['ci_95'][0]:.1%},  {r['ci_95'][1]:.1%}]")
-    print(f"  Pełne odszyfr. : {r['n_perfect']}/{r['n_runs']}  ({r['pct_perfect']:.1f}%)")
+    print(f"  Śr. dok. klucza: {r['mean_accuracy']:.1%} ± {r['std_accuracy']:.1%}")
+    print(f"  95% CI         : [{r['ci_95'][0]:.1%}, {r['ci_95'][1]:.1%}]")
+    print(f"  Pełne odszyfr. : {r['n_perfect']}/{r['n_runs']} ({r['pct_perfect']:.1f}%)")
+    if r.get("cipher") == "transposition":
+        print(f"  Śr. dok. liter : {r['mean_text_accuracy']:.1%} ± {r['std_text_accuracy']:.1%}")
+        print(f"  95% CI (lit.)  : [{r['ci_95_text'][0]:.1%}, {r['ci_95_text'][1]:.1%}]")
+        print(f"  Restartów/próbę: {r['n_restarts']}")
 
 
 def _savefig(fig, filename):
@@ -83,8 +89,8 @@ def plot_convergence(score_histories, title="", n_show=10):
     for hist in score_histories[:n_show]:
         ax.plot(hist, alpha=0.7, linewidth=0.9)
     ax.set_xlabel("Liczba ulepszeń (nowe maximum score)")
-    ax.set_ylabel("Najlepszy score  (suma log-bigramów)")
-    ax.set_title(f"Zbieżność algorytmu MH{('  —  ' + title) if title else ''}")
+    ax.set_ylabel("Najlepszy score (suma log-bigramów)")
+    ax.set_title(f"Zbieżność algorytmu MH{(' — ' + title) if title else ''}")
     ax.grid(True, alpha=0.3)
     _savefig(fig, f"convergence_{title.replace(' ', '_')}.png")
 
@@ -92,17 +98,28 @@ def plot_convergence(score_histories, title="", n_show=10):
 def plot_accuracy_histogram(r):
     fig, ax = plt.subplots(figsize=(8, 5))
     bins = np.linspace(-1 / 52, 1 + 1 / 52, 28)
-    ax.hist(r["accuracies"], bins=bins, edgecolor="black", linewidth=0.5, color="steelblue")
+    ax.hist(r["accuracies"], bins=bins, edgecolor="black", linewidth=0.5,
+            color="steelblue" if not is_trans else "teal")
     ax.axvline(r["mean_accuracy"], color="red", linestyle="--", linewidth=1.5,
                label=f"Średnia: {r['mean_accuracy']:.1%}")
     ax.axvspan(r["ci_95"][0], r["ci_95"][1], alpha=0.15, color="red", label="95% CI")
-    ax.set_xlabel("Dokładność klucza (odsetek trafnych liter spośród 26)")
+
+    xlabel = ("Dokładność klucza (odsetek pozycji spośród k)" if is_trans
+              else "Dokładność klucza (odsetek trafnych liter spośród 26)")
+    ax.set_xlabel(xlabel)
     ax.set_ylabel("Liczba prób")
-    ax.set_title(f"Rozkład dokładności — tekst: {r['text_length']} liter  (N={r['n_runs']})")
+
+    cipher_name = f"transpozycja k={r['key_length']}" if is_trans else "podstawieniowy"
+    ax.set_title(
+        f"Rozkład dokładności — {cipher_name}, tekst: {r['text_length']} liter (N={r['n_runs']})"
+    )
     ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f"{y:.0%}"))
     ax.legend()
     ax.grid(True, alpha=0.3, axis="y")
-    _savefig(fig, f"accuracy_hist_{r['text_length']}.png")
+
+    suffix = (f"transp_k{r['key_length']}_{r['text_length']}" if is_trans
+              else str(r["text_length"]))
+    _savefig(fig, f"accuracy_hist_{suffix}.png")
 
 
 def plot_accuracy_vs_length(all_results):
@@ -123,7 +140,7 @@ def plot_accuracy_vs_length(all_results):
 
     ax.set_xlabel("Długość tekstu (liczba liter)")
     ax.set_ylabel("Dokładność klucza")
-    ax.set_title(f"Dokładność deszyfrowania vs długość tekstu  (N={all_results[0]['n_runs']} prób)")
+    ax.set_title(f"Dokładność deszyfrowania vs długość tekstu (N={all_results[0]['n_runs']} prób)")
     ax.set_ylim(-0.05, 1.05)
     ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f"{y:.0%}"))
     ax.grid(True, alpha=0.3, axis="y")
@@ -139,6 +156,7 @@ def plot_mean_accuracy_vs_length(all_results):
 
     ax.plot(lengths, means, "bo-", linewidth=2, markersize=8, label="Średnia dokładność")
     ax.fill_between(lengths, ci_low, ci_high, alpha=0.2, color="blue", label="95% CI")
+
     for l, m in zip(lengths, means):
         ax.annotate(f"{m:.1%}", xy=(l, m), xytext=(5, 7), textcoords="offset points", fontsize=9)
 

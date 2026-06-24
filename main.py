@@ -77,8 +77,8 @@ def demo_transposition(test_text, log_bigrams):
         n_iter=COMMON_N_ITER,
         n_restarts=TRANS_DEMO_RESTARTS,
     )
-    recovered = transposition.decrypt(ciphertext, found_key)
 
+    recovered = transposition.decrypt(ciphertext, found_key)
     acc_key = transposition.key_accuracy(true_key, found_key)
     acc_text = transposition.text_accuracy(plaintext, recovered)
 
@@ -182,7 +182,7 @@ def main():
     poc_history = poc_substitution(test_text, log_bigrams)
     plot_convergence([poc_history], title=f"poc_substitution_{args.corpus}")
 
-    print("\nGotowe! Wyniki i wykresy zapisano w katalogu  results/")
+    print("\nGotowe! Wyniki i wykresy zapisano w katalogu results/")
 
 
 if __name__ == "__main__":
